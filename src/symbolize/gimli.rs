@@ -435,6 +435,7 @@ pub unsafe fn resolve(what: ResolveWhat<'_>, cb: &mut dyn FnMut(&super::Symbol))
             None => return,
         };
 
+        // MEMO: (何かは謎だが)mappingを作る
         // Finally, get a cached mapping or create a new mapping for this file, and
         // evaluate the DWARF info to find the file/line/name for this address.
         let (cx, stash) = match cache.mapping_for_lib(lib) {
@@ -442,6 +443,7 @@ pub unsafe fn resolve(what: ResolveWhat<'_>, cb: &mut dyn FnMut(&super::Symbol))
             None => return,
         };
         let mut any_frames = false;
+        // MEMO: mappingからframeを復元しようとする
         if let Ok(mut frames) = cx.find_frames(stash, addr as u64) {
             while let Ok(Some(frame)) = frames.next() {
                 any_frames = true;
@@ -456,6 +458,7 @@ pub unsafe fn resolve(what: ResolveWhat<'_>, cb: &mut dyn FnMut(&super::Symbol))
                 });
             }
         }
+        // MEMO: mappingからframeを復元しようとする
         if !any_frames {
             if let Some((object_cx, object_addr)) = cx.object.search_object_map(addr as u64) {
                 if let Ok(mut frames) = object_cx.find_frames(stash, object_addr) {
@@ -470,6 +473,7 @@ pub unsafe fn resolve(what: ResolveWhat<'_>, cb: &mut dyn FnMut(&super::Symbol))
                 }
             }
         }
+        // MEMO: まだ見つからなかったら、object file中のDWARFからsymtabをひっぱてくるように頑張る
         if !any_frames {
             if let Some(name) = cx.object.search_symtab(addr as u64) {
                 call(Symbol::Symtab {
