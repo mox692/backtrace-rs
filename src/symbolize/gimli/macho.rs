@@ -250,6 +250,7 @@ impl<'a> Object<'a> {
     /// Try to load a context for an object file.
     ///
     /// If dsymutil was not run, then the DWARF may be found in the source object files.
+    /// MEMO: これaddrはipでも大丈夫なのか?...
     pub(super) fn search_object_map<'b>(&'b mut self, addr: u64) -> Option<(&Context<'b>, u64)> {
         // `object_map` contains a map from addresses to symbols and object paths.
         // Look up the address and get a mapping for the object.

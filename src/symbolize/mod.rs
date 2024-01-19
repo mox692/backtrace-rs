@@ -114,8 +114,12 @@ impl<'a> ResolveWhat<'a> {
     #[allow(dead_code)]
     fn address_or_ip(&self) -> *mut c_void {
         match self {
+            // MEMO: この2つのbranchで、返しているものが違う説??
             ResolveWhat::Address(a) => adjust_ip(*a),
+            // MEMO: backtrace::resolve_frame() した時はこっち.
             ResolveWhat::Frame(f) => adjust_ip(f.ip()),
+            // macを使うバージョン
+            // ResolveWhat::Frame(f) => f.mac_symbol_addr(),
         }
     }
 }

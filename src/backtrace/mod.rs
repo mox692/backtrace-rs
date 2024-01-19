@@ -98,6 +98,11 @@ impl Frame {
         self.inner.sp()
     }
 
+    /// MEMO: 自分で追加したやつ
+    pub fn mac_symbol_addr(&self) -> *mut c_void {
+        self.inner.mac_symbol_addr()
+    }
+
     /// Returns the starting symbol address of the frame of this function.
     ///
     /// This will attempt to rewind the instruction pointer returned by `ip` to

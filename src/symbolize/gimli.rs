@@ -419,7 +419,10 @@ impl Cache {
     }
 }
 
+// MEMO: backtrace::resolve_frame(ip, |symbol| {...}) で作成される、
+//       closureに渡されるsymbolが作成される. ここでSymbolがどう作成されてるか？
 pub unsafe fn resolve(what: ResolveWhat<'_>, cb: &mut dyn FnMut(&super::Symbol)) {
+    // MEMO: 具体的には、backtrace::trace {} ... で作成したframeを見て、resolveする
     let addr = what.address_or_ip();
     let mut call = |sym: Symbol<'_>| {
         // Extend the lifetime of `sym` to `'static` since we are unfortunately
@@ -452,6 +455,10 @@ pub unsafe fn resolve(what: ResolveWhat<'_>, cb: &mut dyn FnMut(&super::Symbol))
                     None => cx.object.search_symtab(addr as u64),
                 };
                 call(Symbol::Frame {
+                    // MEMO: 下記issueによると、ここのaddrに入れている値は `the starting address of the function`
+                    // 　　　　を返すべきだが、`the unrelocated IP minus one`が返されてしまってるらしい.
+                    // https://github.com/rust-lang/backtrace-rs/issues/520#issuecomment-1603698275
+                    // TODO: ここを _Unwind_FindEnclosingFunction(addr) を入れて返す.
                     addr: addr as *mut c_void,
                     location: frame.location,
                     name,
@@ -473,7 +480,7 @@ pub unsafe fn resolve(what: ResolveWhat<'_>, cb: &mut dyn FnMut(&super::Symbol))
                 }
             }
         }
-        // MEMO: まだ見つからなかったら、object file中のDWARFからsymtabをひっぱてくるように頑張る
+        // MEMO: まだ見つからなかったら、object file中からsymtabをひっぱてくるように頑張る
         if !any_frames {
             if let Some(name) = cx.object.search_symtab(addr as u64) {
                 call(Symbol::Symtab {
@@ -509,6 +516,8 @@ impl Symbol<'_> {
         }
     }
 
+    // MEMO: backtrace::resolve_frame(frame, |symbol| { symbol.addr() }
+    //       のaddr()関数ははここに解決される. Symbolがどのように作成された?
     pub fn addr(&self) -> Option<*mut c_void> {
         match self {
             Symbol::Frame { addr, .. } => Some(*addr),

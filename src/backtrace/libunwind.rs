@@ -16,6 +16,9 @@
 //! This is the default unwinding API for all non-Windows platforms currently.
 
 use super::super::Bomb;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use core::ffi::c_char;
 use core::ffi::c_void;
 
 pub enum Frame {
@@ -42,6 +45,99 @@ impl Frame {
         };
         #[allow(unused_mut)]
         let mut ip = unsafe { uw::_Unwind_GetIP(ctx) as *mut c_void };
+
+        // To reduce TCB size in SGX enclaves, we do not want to implement
+        // symbol resolution functionality. Rather, we can print the offset of
+        // the address here, which could be later mapped to correct function.
+        #[cfg(all(target_env = "sgx", target_vendor = "fortanix"))]
+        {
+            let image_base = super::get_image_base();
+            ip = usize::wrapping_sub(ip as usize, image_base as _) as _;
+        }
+        ip
+    }
+
+    pub fn mac_symbol_addr(&self) -> *mut c_void {
+        let ctx = match *self {
+            Frame::Raw(ctx) => ctx,
+            Frame::Cloned { ip, .. } => return ip,
+        };
+
+        use crate::print;
+        unsafe {
+            print!(
+                "_Unwind_GetIP: {:?},  _Unwind_FindEnclosingFunction: {:?}\n",
+                uw::_Unwind_GetIP(ctx) as *const c_void as *mut c_void,
+                uw::_Unwind_FindEnclosingFunction(
+                    uw::_Unwind_GetIP(ctx) as *const c_void as *mut c_void
+                )
+            );
+        }
+
+        #[repr(C)]
+        pub struct dwarf_eh_bases {
+            tbase: usize,
+            dbase: usize,
+            func: usize,
+        }
+
+        extern "C" {
+            pub fn _Unwind_Find_FDE(arg: *mut c_void, eh: *const dwarf_eh_bases);
+
+            pub fn backtrace(callstack: *mut *mut libc::c_void, size: libc::c_int) -> i32;
+            // pub fn backtrace_symbols(
+            //     callstack: *mut *mut libc::c_void,
+            //     count: libc::c_int,
+            // ) -> Vec<*const c_char>;
+            pub fn backtrace_symbols(
+                buffer: *const *const libc::c_void,
+                size: libc::c_int,
+            ) -> *mut *mut libc::c_char;
+        }
+
+        {
+            const size: usize = 64;
+            let mut buffer: [*mut libc::c_void; size] = [core::ptr::null_mut(); size];
+
+            let count = unsafe { backtrace(buffer.as_mut_ptr(), size as i32) };
+
+            let syms = unsafe {
+                backtrace_symbols(buffer.as_mut_ptr() as *const *const c_void, size as i32)
+            };
+            if !syms.is_null() {
+                // 各シンボル名を出力
+                for i in 0..size as isize {
+                    let addr = buffer[i as usize];
+                    let symbol = unsafe { *syms.offset(i) };
+                    if !symbol.is_null() {
+                        let symbol_str =
+                            unsafe { core::ffi::CStr::from_ptr(symbol).to_string_lossy() };
+                        // print!("symbol {}: {}, ptr: {:p}\n", i, symbol_str, addr);
+                    }
+                }
+                // メモリの解放
+                unsafe { libc::free(syms as *mut libc::c_void) };
+            }
+        }
+
+        #[allow(unused_mut)]
+        let mut ip = unsafe {
+            let _ = uw::_Unwind_FindEnclosingFunction(uw::_Unwind_GetIP(ctx) as *mut c_void)
+                as *mut c_void;
+
+            let mut eh = Box::new(dwarf_eh_bases {
+                tbase: 0,
+                dbase: 0,
+                func: 0,
+            });
+
+            _Unwind_Find_FDE(
+                uw::_Unwind_GetIP(ctx) as *mut c_void,
+                &*eh as *const dwarf_eh_bases,
+            );
+
+            eh.func as *mut c_void
+        };
 
         // To reduce TCB size in SGX enclaves, we do not want to implement
         // symbol resolution functionality. Rather, we can print the offset of
@@ -99,6 +195,7 @@ impl Clone for Frame {
     }
 }
 
+// MEMO: libunwindを使うバージョン
 #[inline(always)]
 pub unsafe fn trace(mut cb: &mut dyn FnMut(&super::Frame) -> bool) {
     uw::_Unwind_Backtrace(trace_fn, &mut cb as *mut _ as *mut _);
@@ -109,10 +206,16 @@ pub unsafe fn trace(mut cb: &mut dyn FnMut(&super::Frame) -> bool) {
     ) -> uw::_Unwind_Reason_Code {
         let cb = unsafe { &mut *(arg as *mut &mut dyn FnMut(&super::Frame) -> bool) };
         let cx = super::Frame {
+            // MEMO: 結論, macだとここのctxに変な値が入ってくるのではという気がしている
+            //       ctxはただのpointerかも. (/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk/usr/include/unwind.h)
             inner: Frame::Raw(ctx),
         };
 
+        use crate::print;
+
+        // print!("new frame created!! {:?} \n", &cx);
         let mut bomb = Bomb { enabled: true };
+        // MEMO: ここで trace の引数のcbを呼んでる？？？
         let keep_going = cb(&cx);
         bomb.enabled = false;
 
