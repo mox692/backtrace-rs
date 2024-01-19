@@ -450,7 +450,7 @@ pub unsafe fn resolve(what: ResolveWhat<'_>, cb: &mut dyn FnMut(&super::Symbol))
                     None => cx.object.search_symtab(addr as u64),
                 };
                 call(Symbol::Frame {
-                    addr: addr as *mut c_void,
+                    addr: what.symbol_address(),
                     location: frame.location,
                     name,
                 });

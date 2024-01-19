@@ -118,6 +118,14 @@ impl<'a> ResolveWhat<'a> {
             ResolveWhat::Frame(f) => adjust_ip(f.ip()),
         }
     }
+
+    #[allow(dead_code)]
+    fn symbol_address(&self) -> *mut c_void {
+        match self {
+            ResolveWhat::Address(a) => a.clone(),
+            ResolveWhat::Frame(f) => f.symbol_address(),
+        }
+    }
 }
 
 // IP values from stack frames are typically (always?) the instruction

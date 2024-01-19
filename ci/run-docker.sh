@@ -18,7 +18,7 @@ run() {
       --volume `pwd`/target:/checkout/target \
       --workdir /checkout \
       --privileged \
-      --env RUSTFLAGS \
+      --env RUSTFLAGS="-Clink-arg=-L/usr/lib/x86_64-linux-musl/" \
       backtrace \
       bash \
       -c 'PATH=$PATH:/rust/bin exec ci/run.sh'
