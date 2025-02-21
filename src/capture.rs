@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Backtrace {
     // Frames here are listed from top-to-bottom of the stack
-    frames: Vec<BacktraceFrame>,
+    frames: Box<[BacktraceFrame]>,
     // The index we believe is the actual start of the backtrace, omitting
     // frames like `Backtrace::new` and `backtrace::trace`.
     actual_start_index: usize,
@@ -48,7 +48,7 @@ fn _assert_send_sync() {
 #[derive(Clone)]
 pub struct BacktraceFrame {
     frame: Frame,
-    symbols: Option<Vec<BacktraceSymbol>>,
+    symbols: Option<Box<[BacktraceSymbol]>>,
 }
 
 #[derive(Clone)]
@@ -101,7 +101,7 @@ impl Frame {
 #[cfg_attr(feature = "serialize-rustc", derive(RustcDecodable, RustcEncodable))]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct BacktraceSymbol {
-    name: Option<Vec<u8>>,
+    name: Option<Box<[u8]>>,
     addr: Option<usize>,
     filename: Option<PathBuf>,
     lineno: Option<u32>,
@@ -186,7 +186,7 @@ impl Backtrace {
         });
 
         Backtrace {
-            frames,
+            frames: frames.into_boxed_slice(),
             actual_start_index: actual_start_index.unwrap_or(0),
         }
     }
@@ -221,7 +221,7 @@ impl Backtrace {
             {
                 let sym = |symbol: &Symbol| {
                     symbols.push(BacktraceSymbol {
-                        name: symbol.name().map(|m| m.as_bytes().to_vec()),
+                        name: symbol.name().map(|m| m.as_bytes().into()),
                         addr: symbol.addr().map(|a| a as usize),
                         filename: symbol.filename().map(|m| m.to_owned()),
                         lineno: symbol.lineno(),
@@ -235,7 +235,7 @@ impl Backtrace {
                     }
                 }
             }
-            frame.symbols = Some(symbols);
+            frame.symbols = Some(symbols.into_boxed_slice());
         }
     }
 }
@@ -243,7 +243,7 @@ impl Backtrace {
 impl From<Vec<BacktraceFrame>> for Backtrace {
     fn from(frames: Vec<BacktraceFrame>) -> Self {
         Backtrace {
-            frames,
+            frames: frames.into_boxed_slice(),
             actual_start_index: 0,
         }
     }
@@ -260,7 +260,7 @@ impl From<crate::Frame> for BacktraceFrame {
 
 impl Into<Vec<BacktraceFrame>> for Backtrace {
     fn into(self) -> Vec<BacktraceFrame> {
-        self.frames
+        self.frames.into_vec()
     }
 }
 
